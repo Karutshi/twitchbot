@@ -1,5 +1,5 @@
 import socket, string, threading, time, re
-import urllib2, json, readline 
+import urllib2, json
 
 class Twitchbot:
 
