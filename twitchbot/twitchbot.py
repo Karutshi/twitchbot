@@ -1,4 +1,4 @@
-import socket, string, threading, time, re
+import socket, string, threading, time, re, sys, readline
 import urllib2, json
 
 class Twitchbot:
@@ -14,10 +14,22 @@ class Twitchbot:
         UNDERLINE = '\033[4m'
 
     def __init__(self):
+        f = open("pass.pw", 'r')
+        self.NICK = ""
+        self.PASS = ""
+        for line in f:
+            username = re.search('^USERNAME = ([A-z0-9:]*)$', line)
+            password = re.search('^PASSWORD = ([A-z0-9:]*)$', line)
+            if username:
+                self.NICK = username.group(1)
+            if password:
+                self.PASS = password.group(1)
+        f.close()
+        if self.NICK == "" or self.PASS == "":
+            print "Username or password wasn't found, make sure file pass.pw is present in current folder."
+            exit(1)
         self.HOST = "irc.twitch.tv"
         self.PORT = 6667
-        self.NICK = "Karutshi"
-        self.PASS = "oauth:20rdhomnsdh47z8loafudeiv1xcxsi"
         self.readbuffer = ""
         self.MODT = False
         self.channel = raw_input(self.Color.FAIL + "Enter the channel name to connect to.\r\n" + self.Color.ENDC)
@@ -51,12 +63,18 @@ class Twitchbot:
     def printColor(self, color, message):
         print color + message + self.Color.ENDC
 
+    def printMessage(self, color, username, message):
+        print self.Color.HEADER + username + ": " + self.Color.ENDC + color + message + self.Color.ENDC
+
+    def writeColor(self, color, message):
+        sys.stdout.write(color + message + self.Color.ENDC)
+
     def Send_message(self, message):
         self.pause = False
         if message == "":
             return
         self.s.send("PRIVMSG #" + self.channel + " :" + message + "\r\n")
-        self.printColor(self.Color.OKBLUE, "karutshi: " + message)
+        self.printColor(self.Color.OKBLUE, self.NICK + ": " + message)
 
     def Change_channel(self, newchannel):
         self.s.send("PART #" + self.channel + " \r\n")
@@ -105,22 +123,26 @@ class Twitchbot:
 
                                 if self.MODT:
                                     color = ""
-                                    if username in self.users.get("moderators") or username in self.users.get("staff"):
-                                        color = self.Color.FAIL
+                                    if username in self.users.get("moderators"):
+                                        self.writeColor(self.Color.FAIL, "[MOD]")
+                                    elif username in self.users.get("staff"):
+                                        self.writeColor(self.Color.FAIL, "[STAFF]")
                                     elif username.lower() == "karutshi":
                                         color = self.Color.OKBLUE
                                     elif "karutshi" in message or re.search("[\s:]karu[\s\,\.\!]", username, re.I):
                                         color = self.Color.WARNING 
-                                    self.printColor(color, username + ":" + message) 
+                                    self.printMessage(color, username, message) 
 
                                 for l in parts:
                                     if "End of /NAMES list" in l:
                                         self.MODT = True
                             elif "PART" in parts[1]:
                                 self.printColor(self.Color.FAIL, ":".join(parts))
-                        except:
+                        except Exception as e:
+                            print e
                             for l in parts:
                                 print l
+
         print "Thread stopping"
 
 twitchbot = Twitchbot()
