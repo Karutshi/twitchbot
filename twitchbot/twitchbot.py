@@ -1,5 +1,6 @@
 import socket, string, threading, time, re, sys, readline
 import urllib2, json
+import psycopg2
 
 class Twitchbot:
 
@@ -57,6 +58,20 @@ class Twitchbot:
             print "Could not connect to http://www.twitch.tv/" + self.channel
             print e
 
+    # Get a text command from the database
+    def get_text_from_db(self, command_name):
+        conn = psycopg2.connect(dbname = 'twitchbot_db', user = 'postgres', 
+                                password = 'postgres', host = 'localhost')
+        cur = conn.cursor()
+        cur.execute("SELECT text FROM commands WHERE command_name = (%s) AND last_used < now() - interval '30 seconds'", 
+                    (command_name,))
+        result = cur.fetchone()
+        cur.execute("UPDATE commands SET last_used = now() WHERE command_name = (%s) AND last_used < now() - interval '30 seconds'", (command_name,))
+        conn.commit()
+        cur.close()
+        conn.close()
+        return result[0] if result is not None else None
+
     def checkuser(self, name):
         for key in self.users:
             if name == self.users.get(key):
@@ -92,7 +107,6 @@ class Twitchbot:
             self.readbuffer = temp.pop()
 
             for line in temp:
-                print line
                 if (line[0] == "PING"):
                     self.s.send("PONG %s\r\n" % line[1])
                 else:
@@ -111,7 +125,12 @@ class Twitchbot:
                             if self.MODT:
                                 command = re.match(r"^!(\w+)", message)
                                 if command:
-                                    self.Send_message(command.group(1))
+                                    print "Got here!"
+                                    send_message = self.get_text_from_db(command.group(1))
+                                    if send_message is not None:
+                                        self.Send_message(send_message)
+                                    else:
+                                        print "Got empty message!"
                                 else:
                                     print message
                             for l in parts:
