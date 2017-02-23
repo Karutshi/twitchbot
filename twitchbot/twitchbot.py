@@ -178,7 +178,7 @@ class Twitchbot:
             matchobj = re.match(r"\s*'(.*?)'\s*'(.*?)'", message)
             trigger = matchobj.group(1)
             response = matchobj.group(2)
-            self.update_reaction(trigger, response)
+            self.update_reaction(trigger.lower(), response)
         elif command_name == "removereact":
             matchobj = re.match(r"\s(.+)", message)
             reaction_to_remove = matchobj.group(1)
@@ -242,7 +242,7 @@ class Twitchbot:
                                 if command:
                                     self.parse_command(command.group(1).lower(), command.group(2), username)
                                 else:
-                                    self.look_for_triggers(message)
+                                    self.look_for_triggers(message.lower())
                             for l in parts:
                                 if "End of /NAMES list" in l:
                                     self.MODT = True
