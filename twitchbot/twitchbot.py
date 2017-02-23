@@ -14,17 +14,16 @@ class Twitchbot:
         UNDERLINE = '\033[4m'
 
     def __init__(self):
-        f = open("pass.pw", 'r')
-        self.NICK = ""
-        self.PASS = ""
-        for line in f:
-            username = re.search('^USERNAME = ([A-z0-9:]*)$', line)
-            password = re.search('^PASSWORD = ([A-z0-9:]*)$', line)
-            if username:
-                self.NICK = username.group(1)
-            if password:
-                self.PASS = password.group(1)
-        f.close()
+        with open("pass.pw", 'r') as f:
+            self.NICK = ""
+            self.PASS = ""
+            for line in f:
+                username = re.search('^USERNAME = ([A-z0-9:]*)$', line)
+                password = re.search('^PASSWORD = ([A-z0-9:]*)$', line)
+                if username:
+                    self.NICK = username.group(1)
+                if password:
+                    self.PASS = password.group(1)
         if self.NICK == "" or self.PASS == "":
             print "Username or password wasn't found, make sure file pass.pw is present in current folder."
             exit(1)
@@ -32,7 +31,7 @@ class Twitchbot:
         self.PORT = 6667
         self.readbuffer = ""
         self.MODT = False
-        self.channel = raw_input(self.Color.FAIL + "Enter the channel name to connect to.\r\n" + self.Color.ENDC)
+        self.channel = "supremechancellorlive"
         self.printColor(self.Color.FAIL, "Connecting to http://www.twitch.tv/" + self.channel)
        
         try:
@@ -54,7 +53,7 @@ class Twitchbot:
             print e
     def checkuser(self, name):
         for key in self.users:
-            if name in self.users.get(key):
+            if name == self.users.get(key):
                 self.printColor(self.Color.OKGREEN, "User '" + name + "' is currently watching and is a member of group '" + key + "'.")
                 break
         else:
