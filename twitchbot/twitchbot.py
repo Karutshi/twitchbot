@@ -16,6 +16,9 @@ class Twitchbot:
 
     def __init__(self):
 
+        # Special fields
+        self.special_commands = ["editcmd", "removecmd", "commands", "reactto"]
+
         # Read password and nickname from local file.
         with open("pass.pw", 'r') as f:
             self.NICK = ""
@@ -81,7 +84,6 @@ class Twitchbot:
             resultlist.append(result) if len(result) != 1 else resultlist.append(result[0])
         cur.close()
         conn.close()
-        print resultlist
         return resultlist
 
     # Get a text command from the database
@@ -125,17 +127,45 @@ class Twitchbot:
 
     def get_commands(self):
         query = "SELECT command_name FROM commands ORDER BY command_name"
-        commands = self.execute_query_get_result(query)
-        print commands
-        return commands
+        return self.execute_query_get_result(query)
+
+
+    def update_reaction(self, trigger, response):
+        update_query = "UPDATE reactions SET response = (%s), last_used = now() - interval '30 seconds' WHERE trigger = (%s)"
+        insert_query = """  INSERT INTO reactions (trigger, response, last_used)
+                            SELECT (%s), (%s), now() - interval '30 seconds'
+                            WHERE NOT EXISTS (SELECT 1 FROM reactions WHERE trigger = (%s))"""
+        self.execute_query(update_query, (response, trigger))
+        self.execute_query(insert_query, (trigger, response, trigger))
+        self.Send_message("Response for '" + trigger + "' has been updated to '" + response + "'.")
+
+    def remove_reaction(self, trigger):
+        query = "DELETE FROM reactions WHERE trigger = (%s)"
+        self.execute_query(query, (trigger,))
+        self.Send_message("Reaction for '" + trigger + "' was removed.")
+
+    def get_react_triggers(self):
+        query = "SELECT trigger FROM reactions WHERE last_used < now() - interval '30 seconds'"
+        return self.execute_query_get_result(query)
+
+    def react_to(self, trigger):
+        query = "SELECT response FROM reactions WHERE trigger = (%s)"
+        update_query = "UPDATE reactions SET last_used = now() WHERE trigger = (%s)"
+        response = self.execute_query_get_result(query, (trigger,))[0]
+        self.execute_query(update_query, (trigger,))
+        self.Send_message(response)
+
+    def look_for_triggers(self, message):
+        for trigger in self.get_react_triggers():
+            if trigger in message:
+                self.react_to(trigger)
+                break
 
     def parse_command(self, command_name, message, user):
         if command_name == "editcmd" and self.user_is_mod(user):
             matchobj = re.match(r"\s*(\w+)\s+(.*)$", message)
             command_to_change = matchobj.group(1)
             command_new_text  = matchobj.group(2)
-            print command_to_change
-            print command_new_text
             self.update_command(command_to_change.lower(), command_new_text)
         elif command_name == "removecmd":
             matchobj = re.match(r"\s*(\w+)", message)
@@ -143,7 +173,16 @@ class Twitchbot:
             self.remove_command(command_to_remove)
         elif command_name == "commands":
             commands = self.get_commands()
-            self.Send_message("Available commands are: !" + ", !".join(commands))
+            self.Send_message("Available commands are: !" + ", !".join(commands + self.special_commands))
+        elif command_name == "reactto":
+            matchobj = re.match(r"\s*'(.*?)'\s*'(.*?)'", message)
+            trigger = matchobj.group(1)
+            response = matchobj.group(2)
+            self.update_reaction(trigger, response)
+        elif command_name == "removereact":
+            matchobj = re.match(r"\s(.+)", message)
+            reaction_to_remove = matchobj.group(1)
+            self.remove_reaction(reaction_to_remove)
         else:
             send_message = self.get_text_from_db(command_name)
             if send_message is not None:
@@ -202,6 +241,8 @@ class Twitchbot:
                                 command = re.match(r"!(\w+)(.*)", message)
                                 if command:
                                     self.parse_command(command.group(1).lower(), command.group(2), username)
+                                else:
+                                    self.look_for_triggers(message)
                             for l in parts:
                                 if "End of /NAMES list" in l:
                                     self.MODT = True
