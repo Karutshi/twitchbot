@@ -14,6 +14,8 @@ class Twitchbot:
         UNDERLINE = '\033[4m'
 
     def __init__(self):
+
+        # Read password and nickname from local file.
         with open("pass.pw", 'r') as f:
             self.NICK = ""
             self.PASS = ""
@@ -27,6 +29,8 @@ class Twitchbot:
         if self.NICK == "" or self.PASS == "":
             print "Username or password wasn't found, make sure file pass.pw is present in current folder."
             exit(1)
+
+        # Setup fields for connecting to twitch.
         self.HOST = "irc.twitch.tv"
         self.PORT = 6667
         self.readbuffer = ""
@@ -34,6 +38,7 @@ class Twitchbot:
         self.channel = "supremechancellorlive"
         self.printColor(self.Color.FAIL, "Connecting to http://www.twitch.tv/" + self.channel)
        
+        # Attempt to connect to the twitch channel.
         try:
             self.s = socket.socket()
             self.s.connect((self.HOST, self.PORT))
@@ -41,8 +46,8 @@ class Twitchbot:
             self.s.send("NICK " + self.NICK + "\r\n")
             self.s.send("JOIN #" + self.channel + " \r\n")
             self.keepReading = True
-            self.biglist = []
-            self.pause = False
+
+            # Get a list of all connected users in chat.
             response = urllib2.urlopen("https://tmi.twitch.tv/group/user/" + self.channel + "/chatters")
             html = response.read()
             parsed_json = json.loads(html)
@@ -51,6 +56,7 @@ class Twitchbot:
         except Exception as e:
             print "Could not connect to http://www.twitch.tv/" + self.channel
             print e
+
     def checkuser(self, name):
         for key in self.users:
             if name == self.users.get(key):
@@ -69,78 +75,54 @@ class Twitchbot:
         sys.stdout.write(color + message + self.Color.ENDC)
 
     def Send_message(self, message):
-        self.pause = False
         if message == "":
             return
         self.s.send("PRIVMSG #" + self.channel + " :" + message + "\r\n")
         self.printColor(self.Color.OKBLUE, self.NICK + ": " + message)
 
-    def Change_channel(self, newchannel):
-        self.s.send("PART #" + self.channel + " \r\n")
-        self.channel = newchannel
-        self.s.send("JOIN #" + self.channel + " \r\n")
-        self.printColor(self.Color.FAIL, "Connecting to http://www.twitch.tv/" + self.channel)
-
-        self.pause = False
 
 
     def Stop(self):
         self.keepReading = False
 
-    def Pause(self):
-        self.pause = True
-
     def Read_chat(self):
         while self.keepReading:
-            self.readbuffer = self.readbuffer + self.s.recv(1024)
+            self.readbuffer = self.readbuffer + self.s.recv(256)
             temp = string.split(self.readbuffer, "\n")
             self.readbuffer = temp.pop()
 
-            if self.pause:
-                self.biglist.extend(temp)
+            for line in temp:
+                print line
+                if (line[0] == "PING"):
+                    self.s.send("PONG %s\r\n" % line[1])
+                else:
+                    parts = string.split(line, ":")
+                    try:
+                        if "QUIT" not in parts[1] and "JOIN" not in parts[1] and "PART" not in parts[1]:
+                            try:
+                                message = ":".join(parts[2:])
+                                message = message[:-1]
+                            except:
+                                message = ""
 
-            if not self.pause:
-                if len(self.biglist) > 0:
-                    temp.extend(self.biglist)
-                    self.biglist = []
-                for line in temp:
-                    if (line[0] == "PING"):
-                        self.s.send("PONG %s\r\n" % line[1])
-                    else:
+                            usernamesplit = string.split(parts[1], "!")
+                            username = usernamesplit[0]
 
-                        parts = string.split(line, ":")
-                        try:
-                            if "QUIT" not in parts[1] and "JOIN" not in parts[1] and "PART" not in parts[1]:
-                                try:
-                                    message = ":".join(parts[2:])
-                                    message = message[:-1]
-                                except:
-                                    message = ""
-
-                                usernamesplit = string.split(parts[1], "!")
-                                username = usernamesplit[0]
-
-                                if self.MODT:
-                                    color = ""
-                                    if username in self.users.get("moderators"):
-                                        self.writeColor(self.Color.FAIL, "[MOD]")
-                                    elif username in self.users.get("staff"):
-                                        self.writeColor(self.Color.FAIL, "[STAFF]")
-                                    elif username.lower() == "karutshi":
-                                        color = self.Color.OKBLUE
-                                    elif "karutshi" in message or re.search("[\s:]karu[\s\,\.\!]", username, re.I):
-                                        color = self.Color.WARNING 
-                                    self.printMessage(color, username, message) 
-
-                                for l in parts:
-                                    if "End of /NAMES list" in l:
-                                        self.MODT = True
-                            elif "PART" in parts[1]:
-                                self.printColor(self.Color.FAIL, ":".join(parts))
-                        except Exception as e:
-                            print e
+                            if self.MODT:
+                                command = re.match(r"^!(\w+)", message)
+                                if command:
+                                    self.Send_message(command.group(1))
+                                else:
+                                    print message
                             for l in parts:
-                                print l
+                                if "End of /NAMES list" in l:
+                                    self.MODT = True
+                        elif "PART" in parts[1]:
+                            self.printColor(self.Color.FAIL, ":".join(parts))
+                    except Exception as e:
+                        print e
+                        for l in parts:
+                            print l
 
         print "Thread stopping"
 
@@ -153,11 +135,6 @@ while True:
     if command.lower() == "quit" or command.lower() == "q":
         twitchbot.Stop()
         break
-    elif command.lower() == "p":
-        twitchbot.Pause()
-    elif command.lower() == "change":
-        twitchbot.Pause()
-        twitchbot.Change_channel(raw_input(twitchbot.Color.FAIL + "Enter new channel name. \r\n" + twitchbot.Color.ENDC))
     elif command.lower() == "checkuser":
         twitchbot.checkuser(raw_input("Enter the username.\n"))
     else:
