@@ -1,4 +1,4 @@
-import socket, string, threading, time, re, sys, readline
+import socket, string, threading, time, re, sys, readline, datetime
 import urllib2, json
 import psycopg2
 
@@ -49,28 +49,96 @@ class Twitchbot:
             self.keepReading = True
 
             # Get a list of all connected users in chat.
-            response = urllib2.urlopen("https://tmi.twitch.tv/group/user/" + self.channel + "/chatters")
-            html = response.read()
-            parsed_json = json.loads(html)
-            self.users = parsed_json.get("chatters")
+            self.update_chatters()
             self.printColor(self.Color.OKGREEN, "Connected!")
         except Exception as e:
             print "Could not connect to http://www.twitch.tv/" + self.channel
             print e
 
-    # Get a text command from the database
-    def get_text_from_db(self, command_name):
+    def execute_query(self, query, query_tuple = None):
         conn = psycopg2.connect(dbname = 'twitchbot_db', user = 'postgres', 
                                 password = 'postgres', host = 'localhost')
         cur = conn.cursor()
-        cur.execute("SELECT text FROM commands WHERE command_name = (%s) AND last_used < now() - interval '30 seconds'", 
-                    (command_name,))
-        result = cur.fetchone()
-        cur.execute("UPDATE commands SET last_used = now() WHERE command_name = (%s) AND last_used < now() - interval '30 seconds'", (command_name,))
+        if query_tuple is not None:
+            cur.execute(query, query_tuple)
+        else:
+            cur.execute(query)
         conn.commit()
         cur.close()
         conn.close()
-        return result[0] if result is not None else None
+
+    def execute_query_get_result(self, query, query_tuple = None):
+        conn = psycopg2.connect(dbname = 'twitchbot_db', user = 'postgres', 
+                                password = 'postgres', host = 'localhost')
+        cur = conn.cursor()
+        if query_tuple is not None:
+            cur.execute(query, query_tuple)
+        else:
+            cur.execute(query)
+        conn.commit()
+        resultlist = []
+        for result in cur:
+            resultlist.append(result) if len(result) != 1 else resultlist.append(result[0])
+        cur.close()
+        conn.close()
+        print resultlist
+        return resultlist
+
+    # Get a text command from the database
+    def get_text_from_db(self, command_name):
+        result = self.execute_query_get_result("SELECT text FROM commands WHERE command_name = (%s) AND last_used < now() - interval '30 seconds'", 
+                                         (command_name,))[0]
+        self.execute_query("UPDATE commands SET last_used = now() WHERE command_name = (%s) AND last_used < now() - interval '30 seconds'", (command_name,))
+        return result if result is not None else None
+
+    def update_chatters(self):
+        response = urllib2.urlopen("https://tmi.twitch.tv/group/user/" + self.channel + "/chatters")
+        html = response.read()
+        parsed_json = json.loads(html)
+        self.users = parsed_json.get("chatters")
+        self.chatters_update = datetime.datetime.now()
+
+    def minutes_since_last_chatters_update(self):
+        return (self.chatters_update - datetime.datetime.now()).seconds / 60
+
+    def user_is_mod(self, user):
+        if user in self.users.get("moderators"):
+            return True
+        elif user not in self.users.get("") and self.minutes_since_last_chatters_update() > 3:
+            self.chatters_update = datetime.datetime.now();
+            self.update_chatters()
+        return user in self.mods 
+
+    def update_command(self, command_name, text):
+        update_query = "UPDATE commands SET text = (%s), last_used = now() - interval '30 seconds' WHERE command_name = (%s)"
+        insert_query = """  INSERT INTO commands (command_name, text, last_used)
+                            SELECT (%s), (%s), now() - interval '30 seconds'
+                            WHERE NOT EXISTS (SELECT 1 FROM commands WHERE command_name = (%s))"""
+        self.execute_query(update_query, (text, command_name))
+        self.execute_query(insert_query, (command_name, text, command_name))
+        self.Send_message("Command '!" + command_name + "' has been updated to '" + text + "'.")
+
+    def get_commands(self):
+        query = "SELECT command_name FROM commands ORDER BY command_name"
+        commands = self.execute_query_get_result(query)
+        print commands
+        return commands
+
+    def parse_command(self, command_name, message, user):
+        if command_name == "editcmd" and self.user_is_mod(user):
+            matchobj = re.match(r"\s*(\w+)\s+(.*)$", message)
+            command_to_change = matchobj.group(1)
+            command_new_text  = matchobj.group(2)
+            print command_to_change
+            print command_new_text
+            self.update_command(command_to_change.lower(), command_new_text)
+        elif command_name == "commands":
+            commands = self.get_commands()
+            self.Send_message("Available commands are: !" + ", !".join(commands))
+        else:
+            send_message = self.get_text_from_db(command_name)
+            if send_message is not None:
+                self.Send_message(send_message)
 
     def checkuser(self, name):
         for key in self.users:
@@ -96,7 +164,6 @@ class Twitchbot:
         self.printColor(self.Color.OKBLUE, self.NICK + ": " + message)
 
 
-
     def Stop(self):
         self.keepReading = False
 
@@ -107,6 +174,7 @@ class Twitchbot:
             self.readbuffer = temp.pop()
 
             for line in temp:
+                print line
                 if (line[0] == "PING"):
                     self.s.send("PONG %s\r\n" % line[1])
                 else:
@@ -123,14 +191,9 @@ class Twitchbot:
                             username = usernamesplit[0]
 
                             if self.MODT:
-                                command = re.match(r"^!(\w+)", message)
+                                command = re.match(r"!(\w+)(.*)", message)
                                 if command:
-                                    print "Got here!"
-                                    send_message = self.get_text_from_db(command.group(1))
-                                    if send_message is not None:
-                                        self.Send_message(send_message)
-                                    else:
-                                        print "Got empty message!"
+                                    self.parse_command(command.group(1).lower(), command.group(2), username)
                                 else:
                                     print message
                             for l in parts:
