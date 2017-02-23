@@ -118,6 +118,11 @@ class Twitchbot:
         self.execute_query(insert_query, (command_name, text, command_name))
         self.Send_message("Command '!" + command_name + "' has been updated to '" + text + "'.")
 
+    def remove_command(self, command_name):
+        query = "DELETE FROM commands WHERE command_name = (%s)"
+        self.execute_query(query, (command_name,))
+        self.Send_message("Command '!" + command_name + "' was removed.")
+
     def get_commands(self):
         query = "SELECT command_name FROM commands ORDER BY command_name"
         commands = self.execute_query_get_result(query)
@@ -132,6 +137,10 @@ class Twitchbot:
             print command_to_change
             print command_new_text
             self.update_command(command_to_change.lower(), command_new_text)
+        elif command_name == "removecmd":
+            matchobj = re.match(r"\s*(\w+)", message)
+            command_to_remove = matchobj.group(1)
+            self.remove_command(command_to_remove)
         elif command_name == "commands":
             commands = self.get_commands()
             self.Send_message("Available commands are: !" + ", !".join(commands))
@@ -174,7 +183,6 @@ class Twitchbot:
             self.readbuffer = temp.pop()
 
             for line in temp:
-                print line
                 if (line[0] == "PING"):
                     self.s.send("PONG %s\r\n" % line[1])
                 else:
@@ -194,8 +202,6 @@ class Twitchbot:
                                 command = re.match(r"!(\w+)(.*)", message)
                                 if command:
                                     self.parse_command(command.group(1).lower(), command.group(2), username)
-                                else:
-                                    print message
                             for l in parts:
                                 if "End of /NAMES list" in l:
                                     self.MODT = True
