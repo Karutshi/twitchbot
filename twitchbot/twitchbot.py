@@ -17,7 +17,8 @@ class Twitchbot:
     def __init__(self):
 
         # Special fields
-        self.special_commands = ["editcmd", "removecmd", "commands", "reactto"]
+        self.special_commands = ["commands"]
+        self.mod_commands = ["editcmd", "removecmd", "reactto", "removereact"]
 
         # Read password and nickname from local file.
         with open("pass.pw", 'r') as f:
@@ -93,6 +94,7 @@ class Twitchbot:
         self.execute_query("UPDATE commands SET last_used = now() WHERE command_name = (%s) AND last_used < now() - interval '30 seconds'", (command_name,))
         return result if result is not None else None
 
+    # Update the internal list of chatters and moderators
     def update_chatters(self):
         response = urllib2.urlopen("https://tmi.twitch.tv/group/user/" + self.channel + "/chatters")
         html = response.read()
