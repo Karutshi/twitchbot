@@ -227,7 +227,6 @@ class Twitchbot:
     # Read twitch chat.
     def Read_chat(self):
         while self.keepReading:
-
             # Receive 256 bytes at a time.
             self.readbuffer = self.readbuffer + self.s.recv(256)
             temp = string.split(self.readbuffer, "\n")
@@ -235,8 +234,10 @@ class Twitchbot:
 
             for line in temp:
                 # Respond to twitch pings.
+                print line
                 if (line[0] == "PING"):
                     self.s.send("PONG %s\r\n" % line[1])
+                    print "PONG %s\r\n" % line[1]
                 else:
                     parts = string.split(line, ":")
                     try:
