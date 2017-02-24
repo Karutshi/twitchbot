@@ -59,6 +59,7 @@ class Twitchbot:
             print "Could not connect to http://www.twitch.tv/" + self.channel
             print e
 
+    # Execute a query towards the database and disregard the output.
     def execute_query(self, query, query_tuple = None):
         conn = psycopg2.connect(dbname = 'twitchbot_db', user = 'postgres', 
                                 password = 'postgres', host = 'localhost')
@@ -71,6 +72,7 @@ class Twitchbot:
         cur.close()
         conn.close()
 
+    # Execute a query towards the database and expect some output.
     def execute_query_get_result(self, query, query_tuple = None):
         conn = psycopg2.connect(dbname = 'twitchbot_db', user = 'postgres', 
                                 password = 'postgres', host = 'localhost')
@@ -87,14 +89,14 @@ class Twitchbot:
         conn.close()
         return resultlist
 
-    # Get a text command from the database
+    # Get a text command from the database.
     def get_text_from_db(self, command_name):
         result = self.execute_query_get_result("SELECT text FROM commands WHERE command_name = (%s) AND last_used < now() - interval '30 seconds'", 
                                          (command_name,))[0]
         self.execute_query("UPDATE commands SET last_used = now() WHERE command_name = (%s) AND last_used < now() - interval '30 seconds'", (command_name,))
         return result if result is not None else None
 
-    # Update the internal list of chatters and moderators
+    # Update the internal list of chatters and moderators.
     def update_chatters(self):
         response = urllib2.urlopen("https://tmi.twitch.tv/group/user/" + self.channel + "/chatters")
         html = response.read()
@@ -105,6 +107,7 @@ class Twitchbot:
     def minutes_since_last_chatters_update(self):
         return (self.chatters_update - datetime.datetime.now()).seconds / 60
 
+    # Checks whether a user is mod, will update modlist if more than 3 minutes has passed since last update.
     def user_is_mod(self, user):
         if user in self.users.get("moderators"):
             return True
@@ -113,6 +116,7 @@ class Twitchbot:
             self.update_chatters()
         return user in self.mods 
 
+    # Update a command in the database, or add it if it doesn't exist.
     def update_command(self, command_name, text):
         update_query = "UPDATE commands SET text = (%s), last_used = now() - interval '30 seconds' WHERE command_name = (%s)"
         insert_query = """  INSERT INTO commands (command_name, text, last_used)
@@ -120,18 +124,20 @@ class Twitchbot:
                             WHERE NOT EXISTS (SELECT 1 FROM commands WHERE command_name = (%s))"""
         self.execute_query(update_query, (text, command_name))
         self.execute_query(insert_query, (command_name, text, command_name))
-        self.Send_message("Command '!" + command_name + "' has been updated to '" + text + "'.")
+        self.send_message("Command '!" + command_name + "' has been updated to '" + text + "'.")
 
+    # Remove a command from the database.
     def remove_command(self, command_name):
         query = "DELETE FROM commands WHERE command_name = (%s)"
         self.execute_query(query, (command_name,))
-        self.Send_message("Command '!" + command_name + "' was removed.")
+        self.send_message("Command '!" + command_name + "' was removed.")
 
+    # Get all commands that are stored in the database.
     def get_commands(self):
         query = "SELECT command_name FROM commands ORDER BY command_name"
         return self.execute_query_get_result(query)
 
-
+    # Update a reaction in the database, or add it if it doesn't exist.
     def update_reaction(self, trigger, response):
         update_query = "UPDATE reactions SET response = (%s), last_used = now() - interval '30 seconds' WHERE trigger = (%s)"
         insert_query = """  INSERT INTO reactions (trigger, response, last_used)
@@ -139,30 +145,35 @@ class Twitchbot:
                             WHERE NOT EXISTS (SELECT 1 FROM reactions WHERE trigger = (%s))"""
         self.execute_query(update_query, (response, trigger))
         self.execute_query(insert_query, (trigger, response, trigger))
-        self.Send_message("Response for '" + trigger + "' has been updated to '" + response + "'.")
+        self.send_message("Response for '" + trigger + "' has been updated to '" + response + "'.")
 
+    # Remove a reaction from the database.
     def remove_reaction(self, trigger):
         query = "DELETE FROM reactions WHERE trigger = (%s)"
         self.execute_query(query, (trigger,))
-        self.Send_message("Reaction for '" + trigger + "' was removed.")
+        self.send_message("Reaction for '" + trigger + "' was removed.")
 
+    # Get all react triggers that are stored in the database.
     def get_react_triggers(self):
         query = "SELECT trigger FROM reactions WHERE last_used < now() - interval '30 seconds'"
         return self.execute_query_get_result(query)
 
+    # Send a reaction of the given trigger to twitch chat. 
     def react_to(self, trigger):
         query = "SELECT response FROM reactions WHERE trigger = (%s)"
         update_query = "UPDATE reactions SET last_used = now() WHERE trigger = (%s)"
         response = self.execute_query_get_result(query, (trigger,))[0]
         self.execute_query(update_query, (trigger,))
-        self.Send_message(response)
+        self.send_message(response)
 
+    # Scan messages for triggers.
     def look_for_triggers(self, message):
         for trigger in self.get_react_triggers():
             if trigger in message:
                 self.react_to(trigger)
                 break
 
+    # Parse a command that started with '!'.
     def parse_command(self, command_name, message, user):
         if command_name == "editcmd" and self.user_is_mod(user):
             matchobj = re.match(r"\s*(\w+)\s+(.*)$", message)
@@ -175,7 +186,7 @@ class Twitchbot:
             self.remove_command(command_to_remove)
         elif command_name == "commands":
             commands = self.get_commands()
-            self.Send_message("Available commands are: !" + ", !".join(commands + self.special_commands))
+            self.send_message("Available commands are: !" + ", !".join(commands + self.special_commands))
         elif command_name == "reactto":
             matchobj = re.match(r"\s*'(.*?)'\s*'(.*?)'", message)
             trigger = matchobj.group(1)
@@ -186,44 +197,44 @@ class Twitchbot:
             reaction_to_remove = matchobj.group(1)
             self.remove_reaction(reaction_to_remove)
         else:
-            send_message = self.get_text_from_db(command_name)
-            if send_message is not None:
-                self.Send_message(send_message)
+            message_to_send = self.get_text_from_db(command_name)
+            if message_to_send is not None:
+                self.send_message(message_to_send)
 
-    def checkuser(self, name):
-        for key in self.users:
-            if name == self.users.get(key):
-                self.printColor(self.Color.OKGREEN, "User '" + name + "' is currently watching and is a member of group '" + key + "'.")
-                break
-        else:
-            self.printColor(self.Color.OKGREEN, "User '" + name + "' is not currently watching.")
-
+    # Print in a given color in the terminal window.
     def printColor(self, color, message):
         print color + message + self.Color.ENDC
-
+    
+    # Print a twitch message.
     def printMessage(self, color, username, message):
         print self.Color.HEADER + username + ": " + self.Color.ENDC + color + message + self.Color.ENDC
-
+    
+    # Print a message with a color, but without newline.
     def writeColor(self, color, message):
         sys.stdout.write(color + message + self.Color.ENDC)
 
-    def Send_message(self, message):
+    # Send a message to twitch chat.
+    def send_message(self, message):
         if message == "":
             return
         self.s.send("PRIVMSG #" + self.channel + " :" + message + "\r\n")
         self.printColor(self.Color.OKBLUE, self.NICK + ": " + message)
 
-
+    # Stop reading twitch chat.
     def Stop(self):
         self.keepReading = False
 
+    # Read twitch chat.
     def Read_chat(self):
         while self.keepReading:
+
+            # Receive 256 bytes at a time.
             self.readbuffer = self.readbuffer + self.s.recv(256)
             temp = string.split(self.readbuffer, "\n")
             self.readbuffer = temp.pop()
 
             for line in temp:
+                # Respond to twitch pings.
                 if (line[0] == "PING"):
                     self.s.send("PONG %s\r\n" % line[1])
                 else:
@@ -257,10 +268,13 @@ class Twitchbot:
 
         print "Thread stopping"
 
+# Create a twitchbot on its own thread.
 twitchbot = Twitchbot()
 thread = threading.Thread(target = twitchbot.Read_chat)
 thread.setDaemon(True)
 thread.start()
+
+# Check terminal input while twitchbot runs, to allow for commands to be sent through the terminal.
 while True:
     command = raw_input()
     if command.lower() == "quit" or command.lower() == "q":
@@ -269,4 +283,4 @@ while True:
     elif command.lower() == "checkuser":
         twitchbot.checkuser(raw_input("Enter the username.\n"))
     else:
-        twitchbot.Send_message(command)
+        twitchbot.send_message(command)
