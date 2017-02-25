@@ -234,11 +234,9 @@ class Twitchbot:
 
             for line in temp:
                 # Respond to twitch pings.
-                print line
                 parts = string.split(line, ":")
                 if "PING" in parts[0]:
                     self.s.send("PONG %s\r\n" % parts[1])
-                    print "PONG %s\r\n" % parts[1]
                 else:
                     try:
                         if "QUIT" not in parts[1] and "JOIN" not in parts[1] and "PART" not in parts[1]:
