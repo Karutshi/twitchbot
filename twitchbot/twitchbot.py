@@ -1,4 +1,4 @@
-import socket, string, time, re, sys, readline, datetime
+import socket, string, time, re, sys, select, threading, readline, datetime
 from multiprocessing import Process, Lock
 import urllib2, json
 import psycopg2
@@ -224,6 +224,16 @@ class Twitchbot:
             self.s.send("PRIVMSG #" + self.channel + " :" + message + "\r\n")
             self.printColor(self.Color.OKBLUE, self.NICK + ": " + message)
 
+    # Send a welcome message every 5 minutes.
+    def send_welcome_message(self):
+        message = self.execute_query_get_result("SELECT message FROM special_messages WHERE name = 'welcome_message' AND " + 
+                                                "last_used < now() - interval '5 minutes'")
+        self.execute_query("UPDATE special_messages SET last_used = now() WHERE name = 'welcome_message' AND " + 
+                           "last_used < now() - interval '5 minutes'")
+        if message:
+            self.send_message(message[0])
+        
+
     # Stop reading twitch chat.
     def stop(self):
         self.keepReading = False
@@ -280,12 +290,15 @@ p.start()
 
 # Check terminal input while twitchbot runs, to allow for commands to be sent through the terminal.
 while True:
-    command = raw_input()
-    if command.lower() == "quit" or command.lower() == "q":
-        twitchbot.stop()
-        p.join(timeout = 1)
-        exit(0)
-    elif command.lower() == "checkuser":
-        twitchbot.checkuser(raw_input("Enter the username.\n"))
-    else:
-        twitchbot.send_message(command)
+    twitchbot.send_welcome_message()
+    command = ""
+    if select.select([sys.stdin,],[],[],0.0)[0]:
+        command = raw_input()
+        if command.lower() == "quit" or command.lower() == "q":
+            twitchbot.stop()
+            p.join(timeout = 1)
+            exit(0)
+        elif command.lower() == "checkuser":
+            twitchbot.checkuser(raw_input("Enter the username.\n"))
+        else:
+            twitchbot.send_message(command)
