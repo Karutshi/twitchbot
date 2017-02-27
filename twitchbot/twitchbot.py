@@ -1,4 +1,5 @@
-import socket, string, threading, time, re, sys, readline, datetime
+import socket, string, time, re, sys, select, threading, readline, datetime
+from multiprocessing import Process, Lock
 import urllib2, json
 import psycopg2
 
@@ -15,6 +16,8 @@ class Twitchbot:
         UNDERLINE = '\033[4m'
 
     def __init__(self):
+
+        self.mutex = Lock()
 
         # Special fields
         self.special_commands = ["commands"]
@@ -215,17 +218,28 @@ class Twitchbot:
 
     # Send a message to twitch chat.
     def send_message(self, message):
-        if message == "":
-            return
-        self.s.send("PRIVMSG #" + self.channel + " :" + message + "\r\n")
-        self.printColor(self.Color.OKBLUE, self.NICK + ": " + message)
+        with self.mutex:
+            if message == "":
+                return
+            self.s.send("PRIVMSG #" + self.channel + " :" + message + "\r\n")
+            self.printColor(self.Color.OKBLUE, self.NICK + ": " + message)
+
+    # Send a welcome message every 5 minutes.
+    def send_welcome_message(self):
+        message = self.execute_query_get_result("SELECT message FROM special_messages WHERE name = 'welcome_message' AND " + 
+                                                "last_used < now() - interval '5 minutes'")
+        self.execute_query("UPDATE special_messages SET last_used = now() WHERE name = 'welcome_message' AND " + 
+                           "last_used < now() - interval '5 minutes'")
+        if message:
+            self.send_message(message[0])
+        
 
     # Stop reading twitch chat.
-    def Stop(self):
+    def stop(self):
         self.keepReading = False
 
     # Read twitch chat.
-    def Read_chat(self):
+    def read_chat(self):
         while self.keepReading:
             # Receive 256 bytes at a time.
             self.readbuffer = self.readbuffer + self.s.recv(256)
@@ -269,17 +283,23 @@ class Twitchbot:
 
 # Create a twitchbot on its own thread.
 twitchbot = Twitchbot()
-thread = threading.Thread(target = twitchbot.Read_chat)
-thread.setDaemon(True)
-thread.start()
+
+p = Process(target = twitchbot.read_chat)
+p.daemon = True
+p.start()
 
 # Check terminal input while twitchbot runs, to allow for commands to be sent through the terminal.
 while True:
-    command = raw_input()
-    if command.lower() == "quit" or command.lower() == "q":
-        twitchbot.Stop()
-        break
-    elif command.lower() == "checkuser":
-        twitchbot.checkuser(raw_input("Enter the username.\n"))
-    else:
-        twitchbot.send_message(command)
+    time.sleep(1)
+    twitchbot.send_welcome_message()
+    command = ""
+    if select.select([sys.stdin,],[],[],0.0)[0]:
+        command = raw_input()
+        if command.lower() == "quit" or command.lower() == "q":
+            twitchbot.stop()
+            p.join(timeout = 1)
+            exit(0)
+        elif command.lower() == "checkuser":
+            twitchbot.checkuser(raw_input("Enter the username.\n"))
+        else:
+            twitchbot.send_message(command)
