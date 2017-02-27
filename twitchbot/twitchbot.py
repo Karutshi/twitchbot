@@ -290,6 +290,7 @@ p.start()
 
 # Check terminal input while twitchbot runs, to allow for commands to be sent through the terminal.
 while True:
+    time.sleep(1)
     twitchbot.send_welcome_message()
     command = ""
     if select.select([sys.stdin,],[],[],0.0)[0]:
