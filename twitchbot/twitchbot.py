@@ -1,4 +1,5 @@
-import socket, string, threading, time, re, sys, readline, datetime
+import socket, string, time, re, sys, readline, datetime
+from multiprocessing import Process, Lock
 import urllib2, json
 import psycopg2
 
@@ -15,6 +16,8 @@ class Twitchbot:
         UNDERLINE = '\033[4m'
 
     def __init__(self):
+
+        self.mutex = Lock()
 
         # Special fields
         self.special_commands = ["commands"]
@@ -215,20 +218,25 @@ class Twitchbot:
 
     # Send a message to twitch chat.
     def send_message(self, message):
-        if message == "":
-            return
-        self.s.send("PRIVMSG #" + self.channel + " :" + message + "\r\n")
-        self.printColor(self.Color.OKBLUE, self.NICK + ": " + message)
+        with self.mutex:
+            if message == "":
+                return
+            self.s.send("PRIVMSG #" + self.channel + " :" + message + "\r\n")
+            self.printColor(self.Color.OKBLUE, self.NICK + ": " + message)
 
     # Stop reading twitch chat.
-    def Stop(self):
+    def stop(self):
         self.keepReading = False
 
     # Read twitch chat.
-    def Read_chat(self):
+    def read_chat(self):
+        self.s.settimeout(1)
         while self.keepReading:
             # Receive 256 bytes at a time.
-            self.readbuffer = self.readbuffer + self.s.recv(256)
+            try:
+                self.readbuffer = self.readbuffer + self.s.recv(256)
+            except socket.timeout:
+                print self.keepReading
             temp = string.split(self.readbuffer, "\n")
             self.readbuffer = temp.pop()
 
@@ -269,16 +277,17 @@ class Twitchbot:
 
 # Create a twitchbot on its own thread.
 twitchbot = Twitchbot()
-thread = threading.Thread(target = twitchbot.Read_chat)
-thread.setDaemon(True)
-thread.start()
+
+p = Process(target = twitchbot.read_chat)
+p.start()
 
 # Check terminal input while twitchbot runs, to allow for commands to be sent through the terminal.
 while True:
     command = raw_input()
     if command.lower() == "quit" or command.lower() == "q":
-        twitchbot.Stop()
-        break
+        twitchbot.stop()
+        p.join()
+        exit(0)
     elif command.lower() == "checkuser":
         twitchbot.checkuser(raw_input("Enter the username.\n"))
     else:
