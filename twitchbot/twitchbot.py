@@ -230,13 +230,9 @@ class Twitchbot:
 
     # Read twitch chat.
     def read_chat(self):
-        self.s.settimeout(1)
         while self.keepReading:
             # Receive 256 bytes at a time.
-            try:
-                self.readbuffer = self.readbuffer + self.s.recv(256)
-            except socket.timeout:
-                print self.keepReading
+            self.readbuffer = self.readbuffer + self.s.recv(256)
             temp = string.split(self.readbuffer, "\n")
             self.readbuffer = temp.pop()
 
@@ -279,6 +275,7 @@ class Twitchbot:
 twitchbot = Twitchbot()
 
 p = Process(target = twitchbot.read_chat)
+p.daemon = True
 p.start()
 
 # Check terminal input while twitchbot runs, to allow for commands to be sent through the terminal.
@@ -286,7 +283,7 @@ while True:
     command = raw_input()
     if command.lower() == "quit" or command.lower() == "q":
         twitchbot.stop()
-        p.join()
+        p.join(timeout = 1)
         exit(0)
     elif command.lower() == "checkuser":
         twitchbot.checkuser(raw_input("Enter the username.\n"))
