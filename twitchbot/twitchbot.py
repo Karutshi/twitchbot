@@ -1,5 +1,5 @@
-import socket, string, time, re, sys, select, threading, readline, datetime
-from multiprocessing import Process, Lock
+import socket, string, time, re, sys, threading, readline, datetime
+from multiprocessing import Lock
 import urllib2, json
 import psycopg2
 
@@ -280,26 +280,3 @@ class Twitchbot:
                             print l
 
         print "Thread stopping"
-
-# Create a twitchbot on its own thread.
-twitchbot = Twitchbot()
-
-p = Process(target = twitchbot.read_chat)
-p.daemon = True
-p.start()
-
-# Check terminal input while twitchbot runs, to allow for commands to be sent through the terminal.
-while True:
-    time.sleep(1)
-    twitchbot.send_welcome_message()
-    command = ""
-    if select.select([sys.stdin,],[],[],0.0)[0]:
-        command = raw_input()
-        if command.lower() == "quit" or command.lower() == "q":
-            twitchbot.stop()
-            p.join(timeout = 1)
-            exit(0)
-        elif command.lower() == "checkuser":
-            twitchbot.checkuser(raw_input("Enter the username.\n"))
-        else:
-            twitchbot.send_message(command)
