@@ -1,7 +1,8 @@
 import socket, string, re, datetime
 from multiprocessing import Lock
 import urllib2, json
-import psycopg2
+
+from commandmanager import CommandManager
 
 class Twitchbot:
 
@@ -18,6 +19,7 @@ class Twitchbot:
     def __init__(self):
 
         self.mutex = Lock()
+        self.command_manager = CommandManager()
 
         # Special fields
         self.special_commands = ["commands"]
@@ -62,43 +64,6 @@ class Twitchbot:
             print "Could not connect to http://www.twitch.tv/" + self.channel
             print e
 
-    # Execute a query towards the database and disregard the output.
-    def execute_query(self, query, query_tuple = None):
-        conn = psycopg2.connect(dbname = 'twitchbot_db', user = 'postgres', 
-                                password = 'postgres', host = 'localhost')
-        cur = conn.cursor()
-        if query_tuple is not None:
-            cur.execute(query, query_tuple)
-        else:
-            cur.execute(query)
-        conn.commit()
-        cur.close()
-        conn.close()
-
-    # Execute a query towards the database and expect some output.
-    def execute_query_get_result(self, query, query_tuple = None):
-        conn = psycopg2.connect(dbname = 'twitchbot_db', user = 'postgres', 
-                                password = 'postgres', host = 'localhost')
-        cur = conn.cursor()
-        if query_tuple is not None:
-            cur.execute(query, query_tuple)
-        else:
-            cur.execute(query)
-        conn.commit()
-        resultlist = []
-        for result in cur:
-            resultlist.append(result) if len(result) != 1 else resultlist.append(result[0])
-        cur.close()
-        conn.close()
-        return resultlist
-
-    # Get a text command from the database.
-    def get_text_from_db(self, command_name):
-        result = self.execute_query_get_result("SELECT text FROM commands WHERE command_name = (%s) AND last_used < now() - interval '30 seconds'", 
-                                         (command_name,))[0]
-        self.execute_query("UPDATE commands SET last_used = now() WHERE command_name = (%s) AND last_used < now() - interval '30 seconds'", (command_name,))
-        return result if result is not None else None
-
     # Update the internal list of chatters and moderators.
     def update_chatters(self):
         response = urllib2.urlopen("https://tmi.twitch.tv/group/user/" + self.channel + "/chatters")
@@ -119,59 +84,14 @@ class Twitchbot:
             self.update_chatters()
         return user in self.mods 
 
-    # Update a command in the database, or add it if it doesn't exist.
-    def update_command(self, command_name, text):
-        update_query = "UPDATE commands SET text = (%s), last_used = now() - interval '30 seconds' WHERE command_name = (%s)"
-        insert_query = """  INSERT INTO commands (command_name, text, last_used)
-                            SELECT (%s), (%s), now() - interval '30 seconds'
-                            WHERE NOT EXISTS (SELECT 1 FROM commands WHERE command_name = (%s))"""
-        self.execute_query(update_query, (text, command_name))
-        self.execute_query(insert_query, (command_name, text, command_name))
-        self.send_message("Command '!" + command_name + "' has been updated to '" + text + "'.")
-
-    # Remove a command from the database.
-    def remove_command(self, command_name):
-        query = "DELETE FROM commands WHERE command_name = (%s)"
-        self.execute_query(query, (command_name,))
-        self.send_message("Command '!" + command_name + "' was removed.")
-
-    # Get all commands that are stored in the database.
-    def get_commands(self):
-        query = "SELECT command_name FROM commands ORDER BY command_name"
-        return self.execute_query_get_result(query)
-
-    # Update a reaction in the database, or add it if it doesn't exist.
-    def update_reaction(self, trigger, response):
-        update_query = "UPDATE reactions SET response = (%s), last_used = now() - interval '30 seconds' WHERE trigger = (%s)"
-        insert_query = """  INSERT INTO reactions (trigger, response, last_used)
-                            SELECT (%s), (%s), now() - interval '30 seconds'
-                            WHERE NOT EXISTS (SELECT 1 FROM reactions WHERE trigger = (%s))"""
-        self.execute_query(update_query, (response, trigger))
-        self.execute_query(insert_query, (trigger, response, trigger))
-        self.send_message("Response for '" + trigger + "' has been updated to '" + response + "'.")
-
-    # Remove a reaction from the database.
-    def remove_reaction(self, trigger):
-        query = "DELETE FROM reactions WHERE trigger = (%s)"
-        self.execute_query(query, (trigger,))
-        self.send_message("Reaction for '" + trigger + "' was removed.")
-
-    # Get all react triggers that are stored in the database.
-    def get_react_triggers(self):
-        query = "SELECT trigger FROM reactions WHERE last_used < now() - interval '30 seconds'"
-        return self.execute_query_get_result(query)
-
     # Send a reaction of the given trigger to twitch chat. 
     def react_to(self, trigger):
-        query = "SELECT response FROM reactions WHERE trigger = (%s)"
-        update_query = "UPDATE reactions SET last_used = now() WHERE trigger = (%s)"
-        response = self.execute_query_get_result(query, (trigger,))[0]
-        self.execute_query(update_query, (trigger,))
+        response = self.command_manager.get_response(trigger)
         self.send_message(response)
 
     # Scan messages for triggers.
     def look_for_triggers(self, message):
-        for trigger in self.get_react_triggers():
+        for trigger in self.command_manager.get_react_triggers():
             if trigger in message:
                 self.react_to(trigger)
                 break
@@ -182,25 +102,25 @@ class Twitchbot:
             matchobj = re.match(r"\s*(\w+)\s+(.*)$", message)
             command_to_change = matchobj.group(1)
             command_new_text  = matchobj.group(2)
-            self.update_command(command_to_change.lower(), command_new_text)
+            self.command_manager.update_command(command_to_change.lower(), command_new_text)
         elif command_name == "removecmd":
             matchobj = re.match(r"\s*(\w+)", message)
             command_to_remove = matchobj.group(1)
-            self.remove_command(command_to_remove)
+            self.command_manager.remove_command(command_to_remove)
         elif command_name == "commands":
-            commands = self.get_commands()
+            commands = self.command_manager.get_commands()
             self.send_message("Available commands are: !" + ", !".join(commands + self.special_commands))
         elif command_name == "reactto":
             matchobj = re.match(r"\s*'(.*?)'\s*'(.*?)'", message)
             trigger = matchobj.group(1)
             response = matchobj.group(2)
-            self.update_reaction(trigger.lower(), response)
+            self.command_manager.update_reaction(trigger.lower(), response)
         elif command_name == "removereact":
             matchobj = re.match(r"\s(.+)", message)
             reaction_to_remove = matchobj.group(1)
-            self.remove_reaction(reaction_to_remove)
+            self.command_manager.remove_reaction(reaction_to_remove)
         else:
-            message_to_send = self.get_text_from_db(command_name)
+            message_to_send = self.command_manager.get_text_from_db(command_name)
             if message_to_send is not None:
                 self.send_message(message_to_send)
 
@@ -222,10 +142,7 @@ class Twitchbot:
 
     # Send a welcome message every 5 minutes.
     def send_welcome_message(self):
-        message = self.execute_query_get_result("SELECT message FROM special_messages WHERE name = 'welcome_message' AND " + 
-                                                "last_used < now() - interval '5 minutes'")
-        self.execute_query("UPDATE special_messages SET last_used = now() WHERE name = 'welcome_message' AND " + 
-                           "last_used < now() - interval '5 minutes'")
+        message = self.command_manager.get_welcome_message()
         if message:
             self.send_message(message[0])
         

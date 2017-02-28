@@ -3,28 +3,36 @@ import psycopg2
 class CommandManager:
 
     def __init__(self):
-        self.conn = psycopg2.connect(dbname = 'twitchbot_db', user = 'postgres', 
-                                password = 'postgres', host = 'localhost')
-        self.cur = conn.cursor()
+        pass
 
     # Execute a query towards the database and disregard the output.
     def execute_query(self, query, query_tuple = None):
+        conn = psycopg2.connect(dbname = 'twitchbot_db', user = 'postgres', 
+                                password = 'postgres', host = 'localhost')
+        cur = conn.cursor()
         if query_tuple is not None:
-            self.cur.execute(query, query_tuple)
+            cur.execute(query, query_tuple)
         else:
-            self.cur.execute(query)
-        self.conn.commit()
+            cur.execute(query)
+        conn.commit()
+        cur.close()
+        conn.close()
 
     # Execute a query towards the database and expect some output.
     def execute_query_get_result(self, query, query_tuple = None):
+        conn = psycopg2.connect(dbname = 'twitchbot_db', user = 'postgres', 
+                                password = 'postgres', host = 'localhost')
+        cur = conn.cursor()
         if query_tuple is not None:
-            self.cur.execute(query, query_tuple)
+            cur.execute(query, query_tuple)
         else:
-            self.cur.execute(query)
-        self.conn.commit()
+            cur.execute(query)
+        conn.commit()
         resultlist = []
-        for result in self.cur:
+        for result in cur:
             resultlist.append(result) if len(result) != 1 else resultlist.append(result[0])
+        cur.close()
+        conn.close()
         return resultlist
 
     # Get a text command from the database.
@@ -83,3 +91,10 @@ class CommandManager:
         result = self.execute_query_get_result(query, (trigger,))[0]
         self.execute_query(update_query, (trigger,))
         return result
+
+    def get_welcome_message(self):
+        message = self.execute_query_get_result("SELECT message FROM special_messages WHERE name = 'welcome_message' AND " + 
+                                                "last_used < now() - interval '5 minutes'")
+        self.execute_query("UPDATE special_messages SET last_used = now() WHERE name = 'welcome_message' AND " + 
+                           "last_used < now() - interval '5 minutes'")
+        return message
