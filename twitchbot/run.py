@@ -1,4 +1,4 @@
-import sys, time, threading, select
+import sys, time, threading, select, readline
 from multiprocessing import Process
 
 from twitchbot import Twitchbot

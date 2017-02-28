@@ -1,4 +1,4 @@
-import socket, string, time, re, sys, threading, readline, datetime
+import socket, string, re, datetime
 from multiprocessing import Lock
 import urllib2, json
 import psycopg2
@@ -211,10 +211,6 @@ class Twitchbot:
     # Print a twitch message.
     def printMessage(self, color, username, message):
         print self.Color.HEADER + username + ": " + self.Color.ENDC + color + message + self.Color.ENDC
-    
-    # Print a message with a color, but without newline.
-    def writeColor(self, color, message):
-        sys.stdout.write(color + message + self.Color.ENDC)
 
     # Send a message to twitch chat.
     def send_message(self, message):
