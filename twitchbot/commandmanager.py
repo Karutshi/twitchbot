@@ -2,34 +2,29 @@ import psycopg2
 
 class CommandManager:
 
+    def __init__(self):
+        self.conn = psycopg2.connect(dbname = 'twitchbot_db', user = 'postgres', 
+                                password = 'postgres', host = 'localhost')
+        self.cur = conn.cursor()
+
     # Execute a query towards the database and disregard the output.
     def execute_query(self, query, query_tuple = None):
-        conn = psycopg2.connect(dbname = 'twitchbot_db', user = 'postgres', 
-                                password = 'postgres', host = 'localhost')
-        cur = conn.cursor()
         if query_tuple is not None:
-            cur.execute(query, query_tuple)
+            self.cur.execute(query, query_tuple)
         else:
-            cur.execute(query)
-        conn.commit()
-        cur.close()
-        conn.close()
+            self.cur.execute(query)
+        self.conn.commit()
 
     # Execute a query towards the database and expect some output.
     def execute_query_get_result(self, query, query_tuple = None):
-        conn = psycopg2.connect(dbname = 'twitchbot_db', user = 'postgres', 
-                                password = 'postgres', host = 'localhost')
-        cur = conn.cursor()
         if query_tuple is not None:
-            cur.execute(query, query_tuple)
+            self.cur.execute(query, query_tuple)
         else:
-            cur.execute(query)
-        conn.commit()
+            self.cur.execute(query)
+        self.conn.commit()
         resultlist = []
-        for result in cur:
+        for result in self.cur:
             resultlist.append(result) if len(result) != 1 else resultlist.append(result[0])
-        cur.close()
-        conn.close()
         return resultlist
 
     # Get a text command from the database.
@@ -39,7 +34,7 @@ class CommandManager:
         self.execute_query("UPDATE commands SET last_used = now() WHERE command_name = (%s) AND last_used < now() - interval '30 seconds'", (command_name,))
         return result if result is not None else None
 
-    
+
     # Update a command in the database, or add it if it doesn't exist.
     def update_command(self, command_name, text):
         update_query = "UPDATE commands SET text = (%s), last_used = now() - interval '30 seconds' WHERE command_name = (%s)"
@@ -81,3 +76,10 @@ class CommandManager:
     def get_react_triggers(self):
         query = "SELECT trigger FROM reactions WHERE last_used < now() - interval '30 seconds'"
         return self.execute_query_get_result(query)
+
+    def get_response(self, trigger):
+        query = "SELECT response FROM reactions WHERE trigger = (%s)"
+        update_query = "UPDATE reactions SET last_used = now() WHERE trigger = (%s)"
+        result = self.execute_query_get_result(query, (trigger,))[0]
+        self.execute_query(update_query, (trigger,))
+        return result
