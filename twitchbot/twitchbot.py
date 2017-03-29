@@ -45,7 +45,7 @@ class Twitchbot:
         self.PORT = 6667
         self.readbuffer = ""
         self.MODT = False
-        self.channel = "supremechancellorlive"
+        self.channel = "crownjeweloftwitch"
         self.printColor(self.Color.FAIL, "Connecting to http://www.twitch.tv/" + self.channel)
        
         # Attempt to connect to the twitch channel.
@@ -103,10 +103,12 @@ class Twitchbot:
             command_to_change = matchobj.group(1)
             command_new_text  = matchobj.group(2)
             self.command_manager.update_command(command_to_change.lower(), command_new_text)
+            self.send_message("Command '!" + command_to_change + "' has been updated to '" + command_new_text + "'.")
         elif command_name == "removecmd":
             matchobj = re.match(r"\s*(\w+)", message)
             command_to_remove = matchobj.group(1)
             self.command_manager.remove_command(command_to_remove)
+            self.send_message("Command '!" + command_to_remove + "' was removed.")
         elif command_name == "commands":
             commands = self.command_manager.get_commands()
             self.send_message("Available commands are: !" + ", !".join(commands + self.special_commands))
@@ -115,10 +117,12 @@ class Twitchbot:
             trigger = matchobj.group(1)
             response = matchobj.group(2)
             self.command_manager.update_reaction(trigger.lower(), response)
+            self.send_message("Response for '" + trigger + "' has been updated to '" + response + "'.")
         elif command_name == "removereact":
             matchobj = re.match(r"\s(.+)", message)
             reaction_to_remove = matchobj.group(1)
             self.command_manager.remove_reaction(reaction_to_remove)
+            self.send_message("Reaction for '" + reaction_to_remove + "' was removed.")
         else:
             message_to_send = self.command_manager.get_text_from_db(command_name)
             if message_to_send is not None:

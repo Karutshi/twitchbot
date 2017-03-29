@@ -51,13 +51,11 @@ class CommandManager:
                             WHERE NOT EXISTS (SELECT 1 FROM commands WHERE command_name = (%s))"""
         self.execute_query(update_query, (text, command_name))
         self.execute_query(insert_query, (command_name, text, command_name))
-        self.send_message("Command '!" + command_name + "' has been updated to '" + text + "'.")
 
     # Remove a command from the database.
     def remove_command(self, command_name):
         query = "DELETE FROM commands WHERE command_name = (%s)"
         self.execute_query(query, (command_name,))
-        self.send_message("Command '!" + command_name + "' was removed.")
 
     # Get all commands that are stored in the database.
     def get_commands(self):
@@ -72,13 +70,11 @@ class CommandManager:
                             WHERE NOT EXISTS (SELECT 1 FROM reactions WHERE trigger = (%s))"""
         self.execute_query(update_query, (response, trigger))
         self.execute_query(insert_query, (trigger, response, trigger))
-        self.send_message("Response for '" + trigger + "' has been updated to '" + response + "'.")
 
     # Remove a reaction from the database.
     def remove_reaction(self, trigger):
         query = "DELETE FROM reactions WHERE trigger = (%s)"
         self.execute_query(query, (trigger,))
-        self.send_message("Reaction for '" + trigger + "' was removed.")
 
     # Get all react triggers that are stored in the database.
     def get_react_triggers(self):
